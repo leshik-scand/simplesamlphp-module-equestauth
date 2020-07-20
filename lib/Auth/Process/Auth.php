@@ -2,11 +2,7 @@
 
 namespace SimpleSAML\Module\equestauth\Auth\Process;
 
-use \DateInterval;
-use \DateTime;
 use SimpleSAML\Auth\ProcessingFilter;
-use SimpleSAML\Error;
-use SimpleSAML\Memcache;
 use SimpleSAML\Utils\HTTP;
 
 /**
@@ -62,9 +58,22 @@ class Auth extends ProcessingFilter
         assert(array_key_exists('Attributes', $request));
         $userEmail = $request['Attributes']['email'][0];
 
-        $responseArray = $this->getTokenDataByPassword();
+        $this->redirectToAuthWithEmail($this->getTokenDataByPassword(), $userEmail);
+    }
 
-        $this->authUserByEmailInAdminPanel($this->getAuthHeaderFromResponseArray($responseArray), $userEmail);
+    /**
+     * @param array $responseArray
+     * @param string $userEmail
+     */
+    private function redirectToAuthWithEmail($responseArray, $userEmail)
+    {
+        assert(!empty($responseArray));
+        HTTP::redirectTrustedURL(sprintf(
+            "%s?email=%s&access_token=%s",
+            $this->apiUrl,
+            $userEmail,
+            $responseArray['access_token']
+        ));
     }
 
     /** @return array */
@@ -88,37 +97,5 @@ class Auth extends ProcessingFilter
             return $responseArray;
         }
         return [];
-    }
-
-    /**
-     * @param string $authHeader
-     * @param string $userEmail
-     */
-    private function authUserByEmailInAdminPanel($authHeader, $userEmail)
-    {
-        $apiUrl = $this->apiUrl . "?email=$userEmail";
-
-        $curl = curl_init();
-        curl_setopt_array($curl, [
-            CURLOPT_URL => $apiUrl,
-            CURLOPT_HTTPHEADER => [$authHeader],
-            //CURLOPT_AUTOREFERER => true,
-            //CURLOPT_FOLLOWLOCATION => true,
-            //CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_COOKIEFILE => ''
-        ]);
-        curl_exec($curl);
-        curl_close($curl);
-    }
-
-    /**
-     * @param array $responseArray
-     * @return string
-     */
-    private function getAuthHeaderFromResponseArray($responseArray)
-    {
-        $accessToken = $responseArray['access_token'];
-        $tokenType = $responseArray['token_type'];
-        return "Authorization: $tokenType $accessToken";
     }
 }
