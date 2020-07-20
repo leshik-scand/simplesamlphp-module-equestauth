@@ -1,0 +1,17 @@
+{
+    "name": "leshik-scand/simplesamlphp-module-equestauth",
+    "description": "Equest auth filter.",
+    "keywords": [ "simplesamlphp", "equestauth", "sp", "module", "filter" ],
+    "type": "simplesamlphp-module",
+    "minimum-stability": "stable",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Maxim Leshik",
+            "email": "leshik@scand.com"
+        }
+    ],
+    "require": {
+        "simplesamlphp/composer-module-installer": "^1.1"
+    }
+}
