@@ -2,6 +2,7 @@
 
 namespace SimpleSAML\Module\equestauth\Auth\Process;
 
+use GuzzleHttp\Client;
 use SimpleSAML\Auth\ProcessingFilter;
 use SimpleSAML\Utils\HTTP;
 
@@ -11,11 +12,14 @@ use SimpleSAML\Utils\HTTP;
 class Auth extends ProcessingFilter
 {
     const GRANT_TYPE = 'password';
+    const ACTION = 'loginByHash';
 
     /** @var string */
     private $tokenUrl;
     /** @var string */
-    private $apiUrl;
+    private $hashUrl;
+    /** @var string */
+    private $loginUrl;
     /** @var string */
     private $clientId;
     /** @var string */
@@ -24,6 +28,8 @@ class Auth extends ProcessingFilter
     private $username;
     /** @var string */
     private $password;
+    /** @var Client */
+    private $httpClient;
 
     public function __construct($config, $reserved)
     {
@@ -34,8 +40,11 @@ class Auth extends ProcessingFilter
         if (array_key_exists('tokenUrl', $config)) {
             $this->tokenUrl = $config['tokenUrl'];
         }
-        if (array_key_exists('apiUrl', $config)) {
-            $this->apiUrl = $config['apiUrl'];
+        if (array_key_exists('hashUrl', $config)) {
+            $this->hashUrl = $config['hashUrl'];
+        }
+        if (array_key_exists('loginUrl', $config)) {
+            $this->loginUrl = $config['loginUrl'];
         }
         if (array_key_exists('clientId', $config)) {
             $this->clientId = $config['clientId'];
@@ -49,6 +58,7 @@ class Auth extends ProcessingFilter
         if (array_key_exists('password', $config)) {
             $this->password = $config['password'];
         }
+        $this->httpClient = new Client();
     }
 
     /** @param array $request */
@@ -58,44 +68,50 @@ class Auth extends ProcessingFilter
         assert(array_key_exists('Attributes', $request));
         $userEmail = $request['Attributes']['email'][0];
 
-        $this->redirectToAuthWithEmail($this->getTokenDataByPassword(), $userEmail);
+        HTTP::redirectTrustedURL($this->loginUrl, [
+            'action' => self::ACTION,
+            'uid' => $this->getUserHash($this->getAccessToken(), $userEmail)
+        ]);
     }
 
     /**
-     * @param array $responseArray
+     * @param string $accessToken
      * @param string $userEmail
+     * @return string
      */
-    private function redirectToAuthWithEmail($responseArray, $userEmail)
+    private function getUserHash($accessToken, $userEmail)
     {
-        assert(!empty($responseArray));
-        HTTP::redirectTrustedURL(sprintf(
-            "%s?email=%s&access_token=%s",
-            $this->apiUrl,
-            $userEmail,
-            $responseArray['access_token']
-        ));
+        assert(!empty($accessToken));
+        assert(!empty($userEmail));
+
+        $response = $this->httpClient->post($this->hashUrl, [
+            'query' => ['email' => $userEmail],
+            'headers' => [
+                "Authorization" => "Bearer " . $accessToken
+            ]
+        ]);
+        $responseArray = json_decode($response->getBody()->getContents(), true);
+        return (json_last_error() == JSON_ERROR_NONE && isset($responseArray['uid']))
+            ? $responseArray['uid']
+            : "";
     }
 
-    /** @return array */
-    private function getTokenDataByPassword()
+    /** @return string */
+    private function getAccessToken()
     {
-        $curl = curl_init();
-        $content = "grant_type=" . self::GRANT_TYPE . "&client_id=$this->clientId&client_secret=$this->clientSecret"
-            . "&username=$this->username&password=$this->password";
-
-        curl_setopt_array($curl, [
-            CURLOPT_URL => $this->tokenUrl,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $content
+        $response = $this->httpClient->post($this->tokenUrl, [
+            'form_params' => [
+                'grant_type' => self::GRANT_TYPE,
+                'client_id' => $this->clientId,
+                'client_secret' => $this->clientSecret,
+                'username' => $this->username,
+                'password' => $this->password,
+            ]
         ]);
-        $response = curl_exec($curl);
-        curl_close($curl);
 
-        $responseArray = json_decode($response, true);
-        if (json_last_error() == JSON_ERROR_NONE) {
-            return $responseArray;
-        }
-        return [];
+        $responseArray = json_decode($response->getBody()->getContents(), true);
+        return (json_last_error() == JSON_ERROR_NONE && isset($responseArray['access_token']))
+            ? $responseArray['access_token']
+            : "";
     }
 }
